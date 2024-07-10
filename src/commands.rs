@@ -1,18 +1,15 @@
 use std::{
     fs::{self, create_dir_all, File},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Context};
 use config::Config;
-use flate2::read::GzDecoder;
-use tar::{Archive, Entry};
-use tracing::info;
 
 use crate::{
     berg,
-    models::{Challenge, RepoConfig},
+    models::RepoConfig,
 };
 /// Initialises a challenge repository in the current directory
 pub async fn init(server: &str, path: &Option<String>) -> anyhow::Result<()> {

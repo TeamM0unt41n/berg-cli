@@ -76,7 +76,7 @@ impl Client {
         challenge: &Challenge,
         challenge_dir: &PathBuf,
     ) -> anyhow::Result<()> {
-        create_dir_all(&challenge_dir)?;
+        create_dir_all(challenge_dir)?;
 
         // readme file
         let readme_file = challenge_dir.join("README.md");
@@ -102,7 +102,7 @@ By **{}**
             let file: bytes::Bytes = reqwest::get(url).await?.bytes().await?;
             info!("grabbed attachment {}", &attachment.file_name);
             if attachment.file_name.ends_with(".tar.gz") {
-                if untar_file(file, &challenge, &challenge_dir).is_err() {
+                if untar_file(file, challenge, challenge_dir).is_err() {
                     info!(
                         "could not extract supposed archive in challenge {}: {}",
                         &challenge.name, attachment.file_name
@@ -141,7 +141,7 @@ fn untar_file(
         // extract into dir
         let tar = GzDecoder::new(&file[..]);
         let mut archive = Archive::new(tar);
-        archive.unpack(&challenge_dir)?;
+        archive.unpack(challenge_dir)?;
     }
     Ok(())
 }
