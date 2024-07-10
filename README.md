@@ -22,9 +22,9 @@ repo
 |- .done/ folder including challenges that have been completed
 |- category-a
    |- challenge-a
-| .berg.auth # berg auth file (optional)
-| .berg.toml # berg config file
-| .gitignore
+|- .berg.auth # berg auth file (optional)
+|- .berg.toml # berg config file
+|- .gitignore
 ```
 
 ## authentication
