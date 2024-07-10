@@ -2,6 +2,7 @@
 use clap::{Parser, Subcommand};
 
 mod berg;
+mod berg_repo;
 mod commands;
 mod models;
 
