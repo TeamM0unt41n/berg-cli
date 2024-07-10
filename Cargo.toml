@@ -1,0 +1,20 @@
+[package]
+name = "berg-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+bytes = "1.6.0"
+chrono = { version = "0.4.38", features = ["serde"] }
+clap = { version = "4.5.4", features = ["derive"] }
+config = "0.14.0"
+flate2 = "1.0.30"
+html2md = "0.2.14"
+reqwest = { version = "0.12.4", features = ["cookies", "json", "rustls-tls"], default-features = false }
+serde = { version = "1.0.203", features = ["derive"] }
+tar = "0.4.40"
+tokio = { version = "1.38.0", features = ["full"] }
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+url = "2.5.0"
