@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -6,12 +7,16 @@ use std::{
 
 use anyhow::{bail, Context};
 use config::Config;
+use tracing::warn;
 
-use crate::{berg, models::RepoConfig};
+use crate::{
+    berg,
+    models::{RepoConfig, SubmitFlagResult},
+};
 
 #[derive(Clone)]
 pub struct BergRepo {
-    client: berg::Client,
+    pub(crate) client: berg::Client,
     config: RepoConfig,
     path: PathBuf,
 }
@@ -40,7 +45,7 @@ impl BergRepo {
             path: dir.to_owned(),
         };
 
-        repo.create_initial_structure()?;
+        repo.create_initial_structure(token)?;
         Ok(repo)
     }
 
@@ -55,7 +60,7 @@ impl BergRepo {
         Ok(repo)
     }
 
-    pub fn create_initial_structure(&mut self) -> anyhow::Result<()> {
+    pub fn create_initial_structure(&mut self, token: &Option<String>) -> anyhow::Result<()> {
         if self.path.read_dir()?.next().is_some() {
             bail!("Directory is not empty.");
         }
@@ -67,15 +72,21 @@ impl BergRepo {
 
         let done_dir = self.done_path();
         fs::create_dir_all(&done_dir)?;
+        fs::create_dir_all(&self.berg_dir())?;
         let mut gitignore_file = File::create(self.path.join(".gitignore"))?;
-        gitignore_file.write_all(".berg.auth".as_bytes())?;
+        gitignore_file.write_all(".berg/".as_bytes())?;
         let mut berg_file = File::create(self.config_path())?;
         berg_file.write_all(toml::to_string(&self.config)?.as_bytes())?;
+
+        if let Some(token) = token {
+            let mut auth_file = File::create(self.auth_path())?;
+            auth_file.write_all(token.as_bytes())?;
+        }
 
         Ok(())
     }
 
-    pub async fn sync(&self, force: bool) -> anyhow::Result<()> {
+    pub async fn sync(&self, force: bool, flagdump: bool) -> anyhow::Result<()> {
         // if repo has uncommited changes, abort
         let repo = git2::Repository::open(&self.path)?;
         let mut status_opts = git2::StatusOptions::new();
@@ -86,6 +97,8 @@ impl BergRepo {
         }
 
         let ctf = self.client.get_ctf().await?;
+
+        let mut tried_flags: HashMap<String, HashSet<String>> = self.load_tried_flags()?;
 
         for (category, challenges) in ctf.challenges_by_category {
             let category_dir = self.path.join(&category);
@@ -112,9 +125,48 @@ impl BergRepo {
                     self.client
                         .create_challenge(&challenge, &challenge_dir)
                         .await?;
+                } else if flagdump {
+                    // challenge dir exists, not done
+                    let flag_file = challenge_dir.join(".flag");
+                    if flag_file.exists() {
+                        // if flag is not in tried flags, try it
+                        // if flag is correct, mark challenge as done
+                        // either way, add to tried flags
+                        let flag = fs::read_to_string(&flag_file)?;
+                        if !tried_flags
+                            .get(&challenge.name)
+                            .map(|flags| flags.contains(&flag))
+                            .unwrap_or(false)
+                        {
+                            let flag_result =
+                                self.client.submit_flag(&challenge.name, &flag).await?;
+                            match flag_result {
+                                SubmitFlagResult::Correct => {
+                                    tried_flags
+                                        .entry(challenge.name.clone())
+                                        .or_insert_with(HashSet::new)
+                                        .insert(flag);
+                                    let _ = fs::rename(&challenge_dir, &done_challenge_dir);
+                                }
+                                SubmitFlagResult::Incorrect => {
+                                    tried_flags
+                                        .entry(challenge.name.clone())
+                                        .or_insert_with(HashSet::new)
+                                        .insert(flag);
+                                }
+                                _ => {
+                                    // warn
+                                    warn!("Unexpected flag result: {:?}", flag_result);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+
+        self.save_tried_flags(&tried_flags)?;
+
         Ok(())
     }
 
@@ -135,6 +187,61 @@ impl BergRepo {
         self.client = client;
         Ok(())
     }
+
+    fn load_tried_flags(&self) -> anyhow::Result<HashMap<String, HashSet<String>>> {
+        let tried_flags_file = self.berg_dir().join("tried_flags");
+        if tried_flags_file.exists() {
+            serde_json::from_reader(File::open(tried_flags_file)?)
+                .context("could not parse tried_flags file")
+        } else {
+            Ok(HashMap::new())
+        }
+    }
+
+    fn save_tried_flags(
+        &self,
+        tried_flags: &HashMap<String, HashSet<String>>,
+    ) -> anyhow::Result<()> {
+        let tried_flags_file = self.berg_dir().join("tried_flags");
+        serde_json::to_writer(File::create(tried_flags_file)?, tried_flags)
+            .context("could not write tried_flags file")
+    }
+
+    pub async fn submit_flag(
+        &self,
+        challenge: &str,
+        flag: &str,
+    ) -> anyhow::Result<SubmitFlagResult> {
+        let mut tried_flags = self.load_tried_flags()?;
+        if tried_flags
+            .get(challenge)
+            .map(|flags| flags.contains(flag))
+            .unwrap_or(false)
+        {
+            return Ok(SubmitFlagResult::Incorrect);
+        }
+        let flag_result = self.client.submit_flag(challenge, flag).await?;
+        match flag_result {
+            SubmitFlagResult::Correct => {
+                tried_flags
+                    .entry(challenge.to_string())
+                    .or_insert_with(HashSet::new)
+                    .insert(flag.to_string());
+            }
+            SubmitFlagResult::Incorrect => {
+                tried_flags
+                    .entry(challenge.to_string())
+                    .or_insert_with(HashSet::new)
+                    .insert(flag.to_string());
+            }
+            _ => {
+                // warn
+                warn!("Unexpected flag result: {:?}", flag_result);
+            }
+        }
+        self.save_tried_flags(&tried_flags)?;
+        Ok(flag_result)
+    }
 }
 
 // paths
@@ -144,11 +251,15 @@ impl BergRepo {
     }
 
     fn auth_path(&self) -> PathBuf {
-        self.path.join(".berg.auth")
+        self.berg_dir().join("auth")
     }
 
     fn config_path(&self) -> PathBuf {
         self.path.join(".berg.toml")
+    }
+
+    fn berg_dir(&self) -> PathBuf {
+        self.path.join(".berg")
     }
 }
 

@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use tar::Archive;
 use tracing::info;
 
-use crate::models::Challenge;
+use crate::models::{Challenge, Instance, SubmitFlagResult};
 
 #[derive(Clone)]
 pub struct Client {
@@ -67,6 +67,62 @@ impl Client {
 impl Client {
     pub async fn get_ctf(&self) -> anyhow::Result<crate::models::Ctf> {
         self.get_json("/api/v1/ctf").await
+    }
+
+    pub async fn submit_flag(
+        &self,
+        challenge: &str,
+        flag: &str,
+    ) -> anyhow::Result<SubmitFlagResult> {
+        self.http_client
+            .post(format!("{}/api/v1/flag", self.berg_server))
+            .json(&serde_json::json!({
+                "challenge": challenge,
+                "flag": flag,
+            }))
+            .send()
+            .await
+            .context("could not submit flag")?
+            .error_for_status()
+            .context("server returned an error")?
+            .json()
+            .await
+            .context("could not deserialize json")
+    }
+
+    pub async fn get_self(&self) -> anyhow::Result<crate::models::PlayerSummary> {
+        self.get_json("/api/v1/self").await
+    }
+
+    pub async fn start_instance(&self, challenge: &str) -> anyhow::Result<Instance> {
+        self.http_client
+            .post(format!(
+                "{}/api/v1/challengeInstance/start",
+                self.berg_server
+            ))
+            .json(&serde_json::json!({
+                "challenge": challenge,
+            }))
+            .send()
+            .await
+            .context("could not start instance")?
+            .json()
+            .await
+            .context("could not deserialise json")
+    }
+
+    pub async fn stop_instance(&self) -> anyhow::Result<()> {
+        self.http_client
+            .post(format!(
+                "{}/api/v1/challengeInstance/stop",
+                self.berg_server
+            ))
+            .send()
+            .await
+            .context("could not stop instance")?
+            .error_for_status()
+            .context("server returned an error")
+            .map(|_| ())
     }
 }
 

@@ -11,12 +11,23 @@ async fn main() -> anyhow::Result<()> {
         Commands::Init { server, path } => {
             berg_cli::commands::init(server, path).await?;
         }
-        Commands::Sync {} => {
-            berg_cli::commands::sync().await?;
+        Commands::Sync { flagdump } => {
+            berg_cli::commands::sync(*flagdump).await?;
         }
         Commands::Authenticate {} => {
             berg_cli::commands::authenticate().await?;
         }
+        Commands::Submit { challenge, flag } => {
+            berg_cli::commands::submit(challenge, flag).await?;
+        }
+        Commands::Instance { command } => match command {
+            InstanceCommands::Start { challenge } => {
+                berg_cli::commands::instance_start(challenge).await?;
+            }
+            InstanceCommands::Stop {} => {
+                berg_cli::commands::instance_stop().await?;
+            }
+        },
     }
 
     Ok(())
@@ -37,6 +48,28 @@ pub enum Commands {
         #[arg()]
         path: Option<String>,
     },
-    Sync {},
+    Sync {
+        #[arg(long)]
+        flagdump: bool,
+    },
     Authenticate {},
+    Submit {
+        #[arg()]
+        challenge: String,
+        #[arg()]
+        flag: String,
+    },
+    Instance {
+        #[command(subcommand)]
+        command: InstanceCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum InstanceCommands {
+    Start {
+        #[arg()]
+        challenge: String,
+    },
+    Stop {},
 }
