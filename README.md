@@ -1,6 +1,6 @@
 # berg-cli
 
-berg-cli is a helper cli to play ctfs running on the berg platform. 
+berg-cli is a helper cli to play ctfs running on the berg platform.
 
 ## Commands
 
@@ -12,6 +12,10 @@ This initialises a berg repo by downloading all available challenges and attachm
 
 Syncs the berg repo. This will download any new challenges it doesn't have yet.
 If authenticated, it will also move any challenge folder that are completed to `.done/`
+
+**`berg-cli authenticate`**
+
+Authenticate the current repo. Requires a berg auth token.
 
 ## berg-repo
 
@@ -38,4 +42,3 @@ create a `.berg.auth` file in the root of your berg repo and insert the token fr
 - init should also initialise a git repository
 - automatic grep for flag format + common encodings of flag format for forensic challenges
 - spwn / pwninit for pwn challenges and maybe run an autopwn just in case
-

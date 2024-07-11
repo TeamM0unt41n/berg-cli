@@ -29,13 +29,13 @@ pub async fn init(server: &str, path: &Option<String>) -> anyhow::Result<()> {
     };
 
     let repo = crate::berg_repo::BergRepo::create(&root_dir, server, &auth_token)?;
-    repo.sync().await?;
+    repo.sync(true).await?;
     Ok(())
 }
 
 pub async fn sync() -> anyhow::Result<()> {
     let repo = crate::berg_repo::BergRepo::from_env()?;
-    repo.sync().await?;
+    repo.sync(false).await?;
 
     Ok(())
 }

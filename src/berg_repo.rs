@@ -61,16 +61,30 @@ impl BergRepo {
         }
 
         fs::create_dir_all(&self.path)?;
+
+        // initialise git repo
+        let _ = git2::Repository::init(&self.path)?;
+
         let done_dir = self.done_path();
         fs::create_dir_all(&done_dir)?;
         let mut gitignore_file = File::create(self.path.join(".gitignore"))?;
         gitignore_file.write_all(".berg.auth".as_bytes())?;
         let mut berg_file = File::create(self.config_path())?;
         berg_file.write_all(toml::to_string(&self.config)?.as_bytes())?;
+
         Ok(())
     }
 
-    pub async fn sync(&self) -> anyhow::Result<()> {
+    pub async fn sync(&self, force: bool) -> anyhow::Result<()> {
+        // if repo has uncommited changes, abort
+        let repo = git2::Repository::open(&self.path)?;
+        let mut status_opts = git2::StatusOptions::new();
+        status_opts.include_untracked(true);
+        let statuses = repo.statuses(Some(&mut status_opts))?;
+        if !force && !statuses.is_empty() {
+            bail!("Repository has uncommited changes.");
+        }
+
         let ctf = self.client.get_ctf().await?;
 
         for (category, challenges) in ctf.challenges_by_category {
