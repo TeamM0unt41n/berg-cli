@@ -14,6 +14,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Sync {} => {
             berg_cli::commands::sync().await?;
         }
+        Commands::Authenticate {} => {
+            berg_cli::commands::authenticate().await?;
+        }
     }
 
     Ok(())
@@ -35,4 +38,5 @@ pub enum Commands {
         path: Option<String>,
     },
     Sync {},
+    Authenticate {},
 }

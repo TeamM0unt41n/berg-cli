@@ -17,6 +17,7 @@ reqwest = { version = "0.12.4", features = ["cookies", "json", "rustls-tls"], de
 serde = { version = "1.0.203", features = ["derive"] }
 tar = "0.4.40"
 tokio = { version = "1.38.0", features = ["full"] }
+toml = "0.8.14"
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 url = "2.5.0"

@@ -157,6 +157,7 @@ dependencies = [
  "serde",
  "tar",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "url",
