@@ -1,11 +1,6 @@
 #![feature(try_blocks)]
 use clap::{Parser, Subcommand};
 
-mod berg;
-mod berg_repo;
-mod commands;
-mod models;
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -14,10 +9,10 @@ async fn main() -> anyhow::Result<()> {
 
     match &cli.command {
         Commands::Init { server, path } => {
-            commands::init(server, path).await?;
+            berg_cli::commands::init(server, path).await?;
         }
         Commands::Sync {} => {
-            commands::sync().await?;
+            berg_cli::commands::sync().await?;
         }
     }
 
