@@ -27,6 +27,15 @@ async fn main() -> anyhow::Result<()> {
             InstanceCommands::Stop {} => {
                 berg_cli::commands::instance_stop().await?;
             }
+            InstanceCommands::Exploit {
+                script,
+                cmd,
+                start,
+                stop,
+                force,
+            } => {
+                berg_cli::commands::instance_exploit(script, cmd, *start, *stop, *force).await?;
+            }
         },
     }
 
@@ -72,4 +81,21 @@ pub enum InstanceCommands {
         challenge: String,
     },
     Stop {},
+    Exploit {
+        /// Path to the exploit python script
+        #[arg()]
+        script: String,
+        /// Command to run the exploit script with
+        #[arg(long, default_value = "python")]
+        cmd: String,
+        /// Whether to start the instance after running the exploit
+        #[arg(long, default_value = "true")]
+        start: bool,
+        /// Whether to stop the instance after running the exploit
+        #[arg(long, default_value = "false")]
+        stop: bool,
+        /// Whether to force start the instance even if another instance is running (will stop the running instance first)
+        #[arg(long, default_value = "false")]
+        force: bool,
+    },
 }

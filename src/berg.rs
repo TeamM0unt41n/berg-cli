@@ -40,7 +40,7 @@ impl Client {
         clone
     }
 
-    fn server_url(&self) -> url::Url {
+    pub fn server_url(&self) -> url::Url {
         url::Url::parse(&self.berg_server).unwrap()
     }
 
@@ -52,6 +52,18 @@ impl Client {
         }
 
         request.send().await
+    }
+
+    fn post_builder(&self, url: &str) -> reqwest::RequestBuilder {
+        let mut request = self
+            .http_client
+            .post(format!("{}{}", self.berg_server, url));
+
+        if let Some(token) = &self.token {
+            request = request.header("Cookie", format!("berg-auth={}", token));
+        }
+
+        request
     }
 
     async fn get_json<T: DeserializeOwned>(&self, url: &str) -> anyhow::Result<T> {
@@ -74,8 +86,7 @@ impl Client {
         challenge: &str,
         flag: &str,
     ) -> anyhow::Result<SubmitFlagResult> {
-        self.http_client
-            .post(format!("{}/api/v1/flag", self.berg_server))
+        self.post_builder("/api/v1/flag")
             .json(&serde_json::json!({
                 "challenge": challenge,
                 "flag": flag,
@@ -95,11 +106,7 @@ impl Client {
     }
 
     pub async fn start_instance(&self, challenge: &str) -> anyhow::Result<Instance> {
-        self.http_client
-            .post(format!(
-                "{}/api/v1/challengeInstance/start",
-                self.berg_server
-            ))
+        self.post_builder("/api/v1/challengeInstance/start")
             .json(&serde_json::json!({
                 "challenge": challenge,
             }))
@@ -112,11 +119,7 @@ impl Client {
     }
 
     pub async fn stop_instance(&self) -> anyhow::Result<()> {
-        self.http_client
-            .post(format!(
-                "{}/api/v1/challengeInstance/stop",
-                self.berg_server
-            ))
+        self.post_builder("/api/v1/challengeInstance/stop")
             .send()
             .await
             .context("could not stop instance")?
@@ -124,80 +127,4 @@ impl Client {
             .context("server returned an error")
             .map(|_| ())
     }
-}
-
-impl Client {
-    pub async fn create_challenge(
-        &self,
-        challenge: &Challenge,
-        challenge_dir: &PathBuf,
-    ) -> anyhow::Result<()> {
-        create_dir_all(challenge_dir)?;
-
-        // readme file
-        let readme_file = challenge_dir.join("README.md");
-        let mut readme_file = File::create(&readme_file)?;
-        let description = html2md::parse_html(&challenge.description);
-        let readme_content = format!(
-            r"# {}
-
-By **{}**
-
-## Description
-
-{}
-
-",
-            &challenge.name, &challenge.author, &description
-        );
-        readme_file.write_all(readme_content.as_bytes())?;
-
-        info!("created challenge {}", &challenge.name);
-        for attachment in &challenge.attachments {
-            let url = self.server_url().join(&attachment.download_url)?;
-            let file: bytes::Bytes = reqwest::get(url).await?.bytes().await?;
-            info!("grabbed attachment {}", &attachment.file_name);
-            if attachment.file_name.ends_with(".tar.gz") {
-                if untar_file(file, challenge, challenge_dir).is_err() {
-                    info!(
-                        "could not extract supposed archive in challenge {}: {}",
-                        &challenge.name, attachment.file_name
-                    );
-                }
-            } else {
-                // download file normally
-                info!(
-                    "non conformant file found in challenge {}: {}",
-                    &challenge.name, attachment.file_name
-                );
-            }
-        }
-        Ok(())
-    }
-}
-
-fn untar_file(
-    file: bytes::Bytes,
-    challenge: &Challenge,
-    challenge_dir: &PathBuf,
-) -> anyhow::Result<()> {
-    let tar = GzDecoder::new(&file[..]);
-    let mut archive = Archive::new(tar);
-    if archive
-        .entries()?
-        .flatten()
-        .flat_map(|e| e.path().map(|e| e.into_owned()))
-        .all(|e| e.starts_with(&challenge.name))
-    {
-        // extract into parent dir
-        let tar = GzDecoder::new(&file[..]);
-        let mut archive = Archive::new(tar);
-        archive.unpack(challenge_dir.parent().unwrap())?;
-    } else {
-        // extract into dir
-        let tar = GzDecoder::new(&file[..]);
-        let mut archive = Archive::new(tar);
-        archive.unpack(challenge_dir)?;
-    }
-    Ok(())
 }

@@ -16,7 +16,7 @@ pub async fn init(server: &str, path: &Option<String>) -> anyhow::Result<()> {
         current_dir
     };
 
-    if root_dir.read_dir()?.next().is_some() {
+    if root_dir.exists() && root_dir.read_dir()?.next().is_some() {
         // not an empty directory
         bail!("Directory is not empty.");
     }
@@ -24,13 +24,15 @@ pub async fn init(server: &str, path: &Option<String>) -> anyhow::Result<()> {
     // ask for optional authentication token
     let auth_token = inquire::Confirm::new("Do you have an authentication token?").prompt()?;
     let auth_token = if auth_token {
-        Some(inquire::Text::new("Enter your authentication token: ").prompt()?)
+        Some(inquire::Password::new("Enter your authentication token: ").prompt()?)
     } else {
         None
     };
 
     let repo = crate::berg_repo::BergRepo::create(&root_dir, server, &auth_token)?;
+    println!("Repository initialised at {}", root_dir.display());
     repo.sync(true, false).await?;
+    println!("Repository synchronised.");
     Ok(())
 }
 
@@ -85,4 +87,14 @@ pub async fn instance_stop() -> anyhow::Result<()> {
     info!("Instance stopped.");
 
     Ok(())
+}
+
+pub async fn instance_exploit(
+    script: &str,
+    cmd: &str,
+    start: bool,
+    stop: bool,
+    force: bool,
+) -> anyhow::Result<()> {
+    todo!()
 }
