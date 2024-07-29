@@ -10,5 +10,5 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct PlayerSummary {
     pub player: Player,
-    pub challenge_instance: Option<Instance>,
+    pub challenge_instance: Instance,
 }

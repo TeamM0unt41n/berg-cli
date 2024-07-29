@@ -8,8 +8,12 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Init { server, path } => {
-            berg_cli::commands::init(server, path).await?;
+        Commands::Init {
+            server,
+            path,
+            basic_auth,
+        } => {
+            berg_cli::commands::init(server, path, basic_auth).await?;
         }
         Commands::Sync { flagdump } => {
             berg_cli::commands::sync(*flagdump).await?;
@@ -21,11 +25,14 @@ async fn main() -> anyhow::Result<()> {
             berg_cli::commands::submit(challenge, flag).await?;
         }
         Commands::Instance { command } => match command {
-            InstanceCommands::Start { challenge } => {
-                berg_cli::commands::instance_start(challenge).await?;
+            InstanceCommands::Start { challenge, force } => {
+                berg_cli::commands::instance_start(challenge, *force).await?;
             }
             InstanceCommands::Stop {} => {
                 berg_cli::commands::instance_stop().await?;
+            }
+            InstanceCommands::Info {} => {
+                berg_cli::commands::instance_info().await?;
             }
             InstanceCommands::Exploit {
                 script,
@@ -56,6 +63,8 @@ pub enum Commands {
         server: String,
         #[arg()]
         path: Option<String>,
+        #[arg(long)]
+        basic_auth: Option<String>,
     },
     Sync {
         #[arg(long)]
@@ -79,8 +88,11 @@ pub enum InstanceCommands {
     Start {
         #[arg()]
         challenge: String,
+        #[arg(long, default_value = "false")]
+        force: bool,
     },
     Stop {},
+    Info {},
     Exploit {
         /// Path to the exploit python script
         #[arg()]

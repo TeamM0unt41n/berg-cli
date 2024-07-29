@@ -149,6 +149,7 @@ dependencies = [
  "chrono",
  "clap",
  "config",
+ "fancy",
  "flate2",
  "git2",
  "html2md",
@@ -511,6 +512,12 @@ dependencies = [
  "libc",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "fancy"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05b601073ae9152ac628eec843013de89a29d2e0bb21c79a95b34de8ba2d4699"
 
 [[package]]
 name = "filetime"

@@ -31,14 +31,23 @@ impl BergRepo {
         Self::open(&root_dir)
     }
 
-    pub fn create(dir: &PathBuf, server: &str, token: &Option<String>) -> anyhow::Result<Self> {
+    pub fn create(
+        dir: &PathBuf,
+        server: &str,
+        token: &Option<String>,
+        basic_auth: &Option<(String, String)>,
+    ) -> anyhow::Result<Self> {
         let mut berg = crate::berg::Client::new(server);
         if let Some(token) = token {
             berg = berg.authenticate(token);
         }
+        if let Some((username, password)) = basic_auth {
+            berg = berg.basic_auth(username, password);
+        }
 
         let config = RepoConfig {
             server: server.to_owned(),
+            basic_auth: basic_auth.to_owned(),
         };
 
         let mut repo = Self {
@@ -71,8 +80,6 @@ impl BergRepo {
 
         // initialise git repo with main branch
         let repo = git2::Repository::init(&self.path)?;
-        let mut branch = repo.find_branch("master", git2::BranchType::Local)?;
-        branch.rename("main", false)?;
 
         let done_dir = self.done_path();
         fs::create_dir_all(&done_dir)?;
@@ -143,9 +150,10 @@ impl BergRepo {
                         // either way, add to tried flags
                         tracing::debug!("possible flag for challenge {}", challenge.name);
                         let flag = fs::read_to_string(&flag_file)?;
+                        let flag = flag.trim();
                         if !tried_flags
                             .get(&challenge.name)
-                            .map(|flags| flags.contains(&flag))
+                            .map(|flags| flags.contains(flag))
                             .unwrap_or(false)
                         {
                             tracing::info!("submitting flag for challenge {}", challenge.name);
@@ -156,7 +164,7 @@ impl BergRepo {
                                     tried_flags
                                         .entry(challenge.name.clone())
                                         .or_insert_with(HashSet::new)
-                                        .insert(flag);
+                                        .insert(flag.to_string());
                                     tracing::info!(
                                         "challenge {} solved, moving to done",
                                         challenge.name
@@ -171,7 +179,7 @@ impl BergRepo {
                                     tried_flags
                                         .entry(challenge.name.clone())
                                         .or_insert_with(HashSet::new)
-                                        .insert(flag);
+                                        .insert(flag.to_string());
                                 }
                                 _ => {
                                     // warn
@@ -189,11 +197,19 @@ impl BergRepo {
         Ok(())
     }
 
+    pub fn context(&self) -> Challenge {
+        // current dir
+        todo!();
+    }
+
     fn try_auth(&mut self) -> anyhow::Result<()> {
         let auth_file = self.auth_path();
         if auth_file.exists() {
             let token = fs::read_to_string(&auth_file)?;
             self.client = self.client.authenticate(&token);
+        }
+        if let Some((username, password)) = &self.config.basic_auth {
+            self.client = self.client.basic_auth(username, password);
         }
         Ok(())
     }

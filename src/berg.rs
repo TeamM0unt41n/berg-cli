@@ -17,6 +17,7 @@ pub struct Client {
     http_client: reqwest::Client,
     berg_server: String,
     token: Option<String>,
+    _basic_auth: Option<(String, String)>,
 }
 
 impl Client {
@@ -31,12 +32,19 @@ impl Client {
             http_client,
             berg_server: berg_server.as_ref().to_owned(),
             token: None,
+            _basic_auth: None,
         }
     }
 
     pub fn authenticate(&self, token: &str) -> Self {
         let mut clone = self.clone();
         clone.token = Some(token.to_owned());
+        clone
+    }
+
+    pub fn basic_auth(&self, username: &str, password: &str) -> Self {
+        let mut clone = self.clone();
+        clone._basic_auth = Some((username.to_owned(), password.to_owned()));
         clone
     }
 
@@ -51,6 +59,10 @@ impl Client {
             request = request.header("Cookie", format!("berg-auth={}", token));
         }
 
+        if let Some((username, password)) = &self._basic_auth {
+            request = request.basic_auth(username, Some(password));
+        }
+
         request.send().await
     }
 
@@ -61,6 +73,10 @@ impl Client {
 
         if let Some(token) = &self.token {
             request = request.header("Cookie", format!("berg-auth={}", token));
+        }
+
+        if let Some((username, password)) = &self._basic_auth {
+            request = request.basic_auth(username, Some(password));
         }
 
         request

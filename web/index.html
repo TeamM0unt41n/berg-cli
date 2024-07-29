@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top 10 Players Score Over Time</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+    <canvas id="scoreChart" width="1000" height="500"></canvas>
+    <script>
+        async function fetchPlayerScores() {
+            const response = await fetch('http://localhost:3000/api/scoreboard/players');
+            const data = await response.json();
+            return data;
+        }
+
+        async function fetchPlayers() {
+            const response = await fetch('http://localhost:3000/api/players');
+            const data = await response.json();
+            return data;
+        }
+        
+        async function fetchCtf() {
+            const response = await fetch('http://localhost:3000/api/ctf');
+            const data = await response.json();
+            return data;
+        }
+
+        function getTopPlayers(data) {
+            const players = data;
+            players.sort((a, b) => b.score - a.score);
+            return players.slice(0, 10);
+        }
+
+        function prepareChartData(challenges, players) {
+            const labels = new Set(); // Time points
+            const datasets = players.map(player => {
+
+                let solves = player.solves;
+                let cumulativeScore = 0;
+                const scoresOverTime = player.solves
+                    .sort((a, b) => new Date(a.solvedAt) - new Date(b.solvedAt))
+                    .map(scoreEntry => {
+                        cumulativeScore += challenges[scoreEntry.challengeName];
+                        labels.add(scoreEntry.solvedAt);
+                        return {
+                            x: new Date(scoreEntry.solvedAt),
+                            y: cumulativeScore
+                        };
+                    });
+            
+                return {
+                    label: player.name,
+                    data: scoresOverTime,
+                    fill: false,
+                    borderColor: getRandomColor(),
+                    tension: 0.1
+                };
+            });
+
+            // Remove duplicate labels
+            const uniqueLabels = [...new Set(labels)];
+
+            return {
+                labels: uniqueLabels,
+                datasets: datasets
+            };
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        async function renderChart() {
+            const data = await fetchPlayerScores();
+            const topPlayers = getTopPlayers(data);
+            const players = await fetchPlayers();
+            let challenges = {};
+            let ctf = await fetchCtf();
+            console.log(topPlayers);
+            console.log(players);
+            for (let player of topPlayers) {
+                player['name'] = players.find(p => p.id == player.playerId)?.name || '';
+            }
+            console.log(ctf);
+            for (let category of Object.values(ctf.challengesByCategory)) {
+                for (let challenge of category) {
+                    
+                    challenges[challenge.name] = challenge.value;
+                }
+            }
+            console.log(challenges);
+            const chartData = prepareChartData(challenges, topPlayers);
+            console.log(chartData);
+            const ctx = document.getElementById('scoreChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Score'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        renderChart();
+    </script>
+</body>
+</html>
+

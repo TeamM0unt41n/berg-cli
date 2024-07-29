@@ -80,16 +80,16 @@ pub struct PlayerAttribute {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instance {
-    pub name: String,
+    pub name: Option<String>,
     pub status: i32,
     pub services: Vec<Service>,
-    pub instance_time: DateTime<Utc>,
+    pub instance_time: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Service {
-    pub name: String,
+    pub name: Option<String>,
     pub port: i32,
     pub protocol: String,
     pub hostname: String,
