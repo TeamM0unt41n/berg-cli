@@ -1,12 +1,6 @@
-use std::{
-    fs::{self, create_dir_all, File},
-    io::Write,
-    path::{Path, PathBuf},
-};
-
 use anyhow::{bail, Context};
 use fancy::printcoln;
-use tracing::{info, warn, Instrument};
+use tracing::{info, warn};
 /// Initialises a challenge repository in the current directory
 pub async fn init(
     server: &str,
@@ -86,16 +80,18 @@ pub async fn submit(challenge: &str, flag: &str) -> anyhow::Result<()> {
 pub async fn instance_start(challenge: &str, force: bool) -> anyhow::Result<()> {
     let repo = crate::berg_repo::BergRepo::from_env()?;
 
-    let status = repo.client.get_self().await?;
-    if let Some(name) = &status.challenge_instance.name {
-        if name == challenge {
-            printcoln!("Already running the same challenge instance.");
-            return Ok(());
-        } else if force {
-            printcoln!("Stopping current instance.");
-            repo.client.stop_instance().await?;
-        } else {
-            bail!("Currently running a different challenge instance.");
+    let current_instance = repo.client.get_current_instance().await;
+    if let Ok(instance) = current_instance {
+        if let Some(name) = &instance.name {
+            if name == challenge {
+                printcoln!("Already running the same challenge instance.");
+                return Ok(());
+            } else if force {
+                printcoln!("Stopping current instance.");
+                repo.client.stop_instance().await?;
+            } else {
+                bail!("Currently running a different challenge instance.");
+            }
         }
     }
 
@@ -117,25 +113,29 @@ pub async fn instance_stop() -> anyhow::Result<()> {
 
 pub async fn instance_info() -> anyhow::Result<()> {
     let repo = crate::berg_repo::BergRepo::from_env()?;
-    let status = repo.client.get_self().await?;
-    if let Some(name) = status.challenge_instance.name {
+    let current_instance = repo.client.get_current_instance().await?;
+    if let Some(name) = &current_instance.name {
         printcoln!("Challenge instance: {}", name);
-        for service in status.challenge_instance.services {
-            if let Some(name) = &service.name {
-                printcoln!(
-                    "{}: {}://{}:{}",
-                    &name,
-                    &service.protocol,
-                    &service.hostname,
-                    &service.port
-                );
-            } else {
-                printcoln!(
-                    "{}://{}:{}",
-                    &service.protocol,
-                    &service.hostname,
-                    &service.port
-                );
+        if let Some(services) = &current_instance.services {
+            for service in services {
+                if let Some(service_name) = &service.name {
+                    if let (Some(protocol), Some(hostname)) = (&service.protocol, &service.hostname) {
+                        printcoln!(
+                            "{}: {}://{}:{}",
+                            service_name,
+                            protocol,
+                            hostname,
+                            service.port
+                        );
+                    }
+                } else if let (Some(protocol), Some(hostname)) = (&service.protocol, &service.hostname) {
+                    printcoln!(
+                        "{}://{}:{}",
+                        protocol,
+                        hostname,
+                        service.port
+                    );
+                }
             }
         }
     } else {
@@ -152,21 +152,22 @@ pub async fn instance_exploit(
     force: bool,
 ) -> anyhow::Result<()> {
     let repo = crate::berg_repo::BergRepo::from_env()?;
-    let context = repo.context();
     // check if an instance is started
-    let status = repo.client.get_self().await?;
-    if let Some(name) = status.challenge_instance.name {
-        // instance exists
-        if name != context.name {
-            if force {
-                // stop instance
-                repo.client.stop_instance().await?;
-            } else {
-                bail!("Currently running challenge");
+    let current_instance = repo.client.get_current_instance().await;
+    if let Ok(instance) = current_instance {
+        if let Some(name) = &instance.name {
+            // instance exists
+            if name != script { // Use script as challenge name for now
+                if force {
+                    // stop instance
+                    repo.client.stop_instance().await?;
+                } else {
+                    bail!("Currently running challenge");
+                }
             }
         }
     } else {
-        repo.client.start_instance(&context.name).await?;
+        repo.client.start_instance(script).await?; // Use script as challenge name for now
     }
     // run exploit script
 

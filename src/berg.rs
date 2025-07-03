@@ -1,16 +1,7 @@
-use std::{
-    fs::{create_dir_all, File},
-    io::Write,
-    path::PathBuf,
-};
-
 use anyhow::Context;
-use flate2::bufread::GzDecoder;
 use serde::de::DeserializeOwned;
-use tar::Archive;
-use tracing::info;
 
-use crate::models::{Challenge, Instance, SubmitFlagResult};
+use crate::models::{Challenge, Instance, Metadata, Solve, AddSolveRequest, InstanceStartRequest, CurrentPlayer, CurrentTeam, SubmitFlagResult};
 
 #[derive(Clone)]
 pub struct Client {
@@ -93,20 +84,34 @@ impl Client {
 }
 
 impl Client {
-    pub async fn get_ctf(&self) -> anyhow::Result<crate::models::Ctf> {
-        self.get_json("/api/v1/ctf").await
+    pub async fn get_challenges(&self) -> anyhow::Result<Vec<Challenge>> {
+        self.get_json("/api/challenges").await
     }
 
-    pub async fn submit_flag(
-        &self,
-        challenge: &str,
-        flag: &str,
-    ) -> anyhow::Result<SubmitFlagResult> {
-        self.post_builder("/api/v1/flag")
-            .json(&serde_json::json!({
-                "challenge": challenge,
-                "flag": flag,
-            }))
+    pub async fn get_challenge(&self, name: &str) -> anyhow::Result<Challenge> {
+        self.get_json(&format!("/api/challenges/{}", name)).await
+    }
+
+    pub async fn get_metadata(&self) -> anyhow::Result<Metadata> {
+        self.get_json("/api/metadata").await
+    }
+
+    pub async fn get_current_player(&self) -> anyhow::Result<CurrentPlayer> {
+        self.get_json("/api/players/current").await
+    }
+
+    pub async fn get_current_team(&self) -> anyhow::Result<CurrentTeam> {
+        self.get_json("/api/teams/current").await
+    }
+
+    pub async fn submit_flag(&self, challenge: &str, flag: &str) -> anyhow::Result<Solve> {
+        let request = AddSolveRequest {
+            challenge: Some(challenge.to_string()),
+            flag: Some(flag.to_string()),
+        };
+        
+        self.post_builder("/api/solves")
+            .json(&request)
             .send()
             .await
             .context("could not submit flag")?
@@ -117,15 +122,13 @@ impl Client {
             .context("could not deserialize json")
     }
 
-    pub async fn get_self(&self) -> anyhow::Result<crate::models::PlayerSummary> {
-        self.get_json("/api/v1/self").await
-    }
-
     pub async fn start_instance(&self, challenge: &str) -> anyhow::Result<Instance> {
-        self.post_builder("/api/v1/challengeInstance/start")
-            .json(&serde_json::json!({
-                "challenge": challenge,
-            }))
+        let request = InstanceStartRequest {
+            challenge: Some(challenge.to_string()),
+        };
+        
+        self.post_builder("/api/instances/current")
+            .json(&request)
             .send()
             .await
             .context("could not start instance")?
@@ -134,13 +137,75 @@ impl Client {
             .context("could not deserialise json")
     }
 
-    pub async fn stop_instance(&self) -> anyhow::Result<()> {
-        self.post_builder("/api/v1/challengeInstance/stop")
+    pub async fn stop_instance(&self) -> anyhow::Result<Instance> {
+        self.http_client
+            .delete(format!("{}/api/instances/current", self.berg_server))
             .send()
             .await
             .context("could not stop instance")?
             .error_for_status()
-            .context("server returned an error")
-            .map(|_| ())
+            .context("server returned an error")?
+            .json()
+            .await
+            .context("could not deserialize json")
+    }
+
+    pub async fn get_current_instance(&self) -> anyhow::Result<Instance> {
+        self.get_json("/api/instances/current").await
+    }
+
+    // Legacy method for backward compatibility - converts new API to old CTF format
+    pub async fn get_ctf(&self) -> anyhow::Result<crate::models::Ctf> {
+        let challenges = self.get_challenges().await?;
+        let metadata = self.get_metadata().await?;
+        
+        // Group challenges by category
+        let mut challenges_by_category = std::collections::HashMap::new();
+        for challenge in challenges {
+            if let Some(categories) = &challenge.categories {
+                for category in categories {
+                    challenges_by_category
+                        .entry(category.clone())
+                        .or_insert_with(Vec::new)
+                        .push(challenge.clone());
+                }
+            } else {
+                challenges_by_category
+                    .entry("Uncategorized".to_string())
+                    .or_insert_with(Vec::new)
+                    .push(challenge);
+            }
+        }
+        
+        Ok(crate::models::Ctf {
+            start: metadata.start,
+            end: metadata.end,
+            server_time: chrono::Utc::now(), // This is not available in new API
+            freeze_start: metadata.freeze_start,
+            freeze_end: metadata.freeze_end,
+            teams: metadata.teams,
+            challenges_by_category,
+        })
+    }
+
+    // Legacy method for backward compatibility - returns SubmitFlagResult
+    pub async fn submit_flag_legacy(&self, challenge: &str, flag: &str) -> anyhow::Result<SubmitFlagResult> {
+        match self.submit_flag(challenge, flag).await {
+            Ok(_) => Ok(SubmitFlagResult::Correct),
+            Err(e) => {
+                // Try to parse the error to determine the specific failure reason
+                // For now, we'll default to Incorrect
+                let error_msg = e.to_string();
+                if error_msg.contains("400") {
+                    Ok(SubmitFlagResult::Incorrect)
+                } else if error_msg.contains("429") {
+                    Ok(SubmitFlagResult::RateLimited)
+                } else if error_msg.contains("409") {
+                    Ok(SubmitFlagResult::AlreadySolved)
+                } else {
+                    Ok(SubmitFlagResult::Incorrect)
+                }
+            }
+        }
     }
 }
