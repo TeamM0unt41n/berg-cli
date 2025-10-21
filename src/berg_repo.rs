@@ -31,23 +31,18 @@ impl BergRepo {
         Self::open(&root_dir)
     }
 
-    pub fn create(
+    pub async fn create(
         dir: &PathBuf,
         server: &str,
-        token: &Option<String>,
-        basic_auth: &Option<(String, String)>,
+        credentials: &Option<(String, String)>,
     ) -> anyhow::Result<Self> {
         let mut berg = crate::berg::Client::new(server);
-        if let Some(token) = token {
-            berg = berg.authenticate(token);
-        }
-        if let Some((username, password)) = basic_auth {
-            berg = berg.basic_auth(username, password);
+        if let Some((uid, token)) = credentials {
+            berg = berg.authenticate(uid, token).await?;
         }
 
         let config = RepoConfig {
             server: server.to_owned(),
-            basic_auth: basic_auth.to_owned(),
         };
 
         let mut repo = Self {
@@ -56,22 +51,22 @@ impl BergRepo {
             path: dir.to_owned(),
         };
 
-        repo.create_initial_structure(token)?;
+        repo.create_initial_structure(credentials)?;
         Ok(repo)
     }
 
-    pub fn open(path: &PathBuf) -> anyhow::Result<Self> {
+    pub async fn open(path: &PathBuf) -> anyhow::Result<Self> {
         let config = load_config(&path.join(".berg.toml"))?;
         let mut repo = Self {
             client: berg::Client::new(&config.server),
             config,
             path: path.to_owned(),
         };
-        repo.try_auth()?;
+        repo.try_auth().await?;
         Ok(repo)
     }
 
-    pub fn create_initial_structure(&mut self, token: &Option<String>) -> anyhow::Result<()> {
+    pub fn create_initial_structure(&mut self, credentials: &Option<(String, String)>) -> anyhow::Result<()> {
         if self.path.exists() && self.path.read_dir()?.next().is_some() {
             bail!("Directory is not empty.");
         }
@@ -89,8 +84,10 @@ impl BergRepo {
         let mut berg_file = File::create(self.config_path())?;
         berg_file.write_all(toml::to_string(&self.config)?.as_bytes())?;
 
-        if let Some(token) = token {
+        if let Some((uid, token)) = credentials {
             let mut auth_file = File::create(self.auth_path())?;
+            auth_file.write_all(uid.as_bytes())?;
+            auth_file.write(b":");
             auth_file.write_all(token.as_bytes())?;
         }
         tracing::info!("Repository created at {}", self.path.display());
@@ -202,20 +199,18 @@ impl BergRepo {
         todo!();
     }
 
-    fn try_auth(&mut self) -> anyhow::Result<()> {
+    async fn try_auth(&mut self) -> anyhow::Result<()> {
         let auth_file = self.auth_path();
         if auth_file.exists() {
-            let token = fs::read_to_string(&auth_file)?;
-            self.client = self.client.authenticate(&token);
-        }
-        if let Some((username, password)) = &self.config.basic_auth {
-            self.client = self.client.basic_auth(username, password);
+            let creds = fs::read_to_string(&auth_file)?;
+            let (uid, token) = creds.split_once(':').unwrap();
+            self.client = self.client.authenticate(&uid, &token).await?;
         }
         Ok(())
     }
 
-    pub fn authenticate(&mut self, token: &str) -> anyhow::Result<()> {
-        let client = self.client.authenticate(token);
+    pub async fn authenticate(&mut self, uid: &str, token: &str) -> anyhow::Result<()> {
+        let client = self.client.authenticate(uid, token).await?;
         // write authentication token to file
         let mut file = File::create(self.auth_path())?;
         file.write_all(token.as_bytes())?;

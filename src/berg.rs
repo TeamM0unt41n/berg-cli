@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Context;
 use flate2::bufread::GzDecoder;
+use openidconnect::{AuthType, ClientId, IssuerUrl, OAuth2TokenResponse, ProviderMetadata, ResourceOwnerPassword, ResourceOwnerUsername, core::{CoreAuthDisplay, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreGrantType, CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreProviderMetadata, CoreResponseMode, CoreResponseType, CoreSubjectIdentifierType}};
 use serde::de::DeserializeOwned;
 use tar::Archive;
 use tracing::info;
@@ -17,7 +18,6 @@ pub struct Client {
     http_client: reqwest::Client,
     berg_server: String,
     token: Option<String>,
-    _basic_auth: Option<(String, String)>,
 }
 
 impl Client {
@@ -32,20 +32,27 @@ impl Client {
             http_client,
             berg_server: berg_server.as_ref().to_owned(),
             token: None,
-            _basic_auth: None,
         }
     }
 
-    pub fn authenticate(&self, token: &str) -> Self {
+    pub async fn authenticate(&self, uid: &str, token: &str) -> anyhow::Result<Self> {
         let mut clone = self.clone();
-        clone.token = Some(token.to_owned());
-        clone
-    }
+        // do the grant
+        let issuer = &self.berg_server;
+        let http_client = self.http_client.clone();
+        let metadata = CoreProviderMetadata::discover_async(IssuerUrl::new(issuer.to_string())?, &http_client).await?;
+        let oidc_client = openidconnect::core::CoreClient::from_provider_metadata(metadata, ClientId::new("berg-client".to_string()), None)
+            .set_auth_type(AuthType::RequestBody);
 
-    pub fn basic_auth(&self, username: &str, password: &str) -> Self {
-        let mut clone = self.clone();
-        clone._basic_auth = Some((username.to_owned(), password.to_owned()));
-        clone
+        let response = oidc_client.exchange_password(
+            &ResourceOwnerUsername::new(uid.to_string()), 
+            &ResourceOwnerPassword::new(token.to_string())
+        )?
+        .request_async(&http_client).await?;
+        let password = response.access_token();
+        
+        clone.token = Some(password.clone().into_secret().to_owned());
+        Ok(clone)
     }
 
     pub fn server_url(&self) -> url::Url {
@@ -56,11 +63,7 @@ impl Client {
         let mut request = self.http_client.get(format!("{}{}", self.berg_server, url));
 
         if let Some(token) = &self.token {
-            request = request.header("Cookie", format!("berg-auth={}", token));
-        }
-
-        if let Some((username, password)) = &self._basic_auth {
-            request = request.basic_auth(username, Some(password));
+            request = request.bearer_auth(token);  
         }
 
         request.send().await
@@ -72,11 +75,7 @@ impl Client {
             .post(format!("{}{}", self.berg_server, url));
 
         if let Some(token) = &self.token {
-            request = request.header("Cookie", format!("berg-auth={}", token));
-        }
-
-        if let Some((username, password)) = &self._basic_auth {
-            request = request.basic_auth(username, Some(password));
+            request = request.bearer_auth(token);  
         }
 
         request
