@@ -1,7 +1,28 @@
 use chrono::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Metadata {
+    pub version: String,
+    pub event_name: String,
+    pub event_organiser: String,
+    pub event_logo_url: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub allow_anonymous_access: bool,
+    pub player_attributes: Option<Vec<PlayerAttribute>>,
+    pub freeze_start: Option<DateTime<Utc>>,
+    pub freeze_end: Option<DateTime<Utc>>,
+    pub teams: bool,
+    pub challenge_maximum_value: i32,
+    pub challenge_minimum_value: i32,
+    pub challenge_solves_before_minimum: i32,
+}
+
+// Legacy struct for backward compatibility
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Ctf {
@@ -17,84 +38,175 @@ pub struct Ctf {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Challenge {
-    pub name: String,
-    pub author: String,
-    pub description: String,
-    pub categories: Vec<String>,
-    pub difficulty: String,
-    pub flag_format: String,
-    pub attachments: Vec<Attachment>,
-    pub value: i32,
-    pub solved_by_team: bool,
-    pub solved_by_player: bool,
-    pub instantiatable: bool,
-    pub player_solves: Vec<PlayerSolve>,
-    pub team_solves: Vec<TeamSolve>,
+    pub name: Option<String>,
+    pub display_name: Option<String>,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    pub hide_until: Option<DateTime<Utc>>,
+    pub categories: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+    pub event: Option<String>,
+    pub difficulty: Option<String>,
+    pub flag_format: Option<String>,
+    pub attachments: Option<Vec<Attachment>>,
+    pub has_remote: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attachment {
-    pub file_name: String,
-    pub download_url: String,
+    pub file_name: Option<String>,
+    pub download_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayerSolve {
-    pub player_id: String,
+pub struct Solve {
+    pub id: Uuid,
+    pub player_id: Uuid,
     pub solved_at: DateTime<Utc>,
-    pub challenge_name: String,
-    pub is_first_blood: bool,
+    pub challenge_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TeamSolve {
-    pub player_id: String,
-    pub team_id: String,
-    pub solved_at: DateTime<Utc>,
-    pub challenge_name: String,
+pub struct Submission {
+    pub id: Uuid,
+    pub player_id: Uuid,
+    pub submitted_at: DateTime<Utc>,
+    pub challenge_name: Option<String>,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Page {
+    pub title: Option<String>,
+    pub path: Option<String>,
+    pub index: i32,
+    pub content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddSolveRequest {
+    pub challenge: Option<String>,
+    pub flag: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstanceStartRequest {
+    pub challenge: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamCreateRequest {
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinTeamRequest {
+    pub join_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributesUpdateRequest {
+    pub attributes: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Player {
-    pub id: String,
-    pub name: String,
-    pub team_id: Option<String>,
-    pub discord_id: Option<String>,
-    pub attributes: HashMap<String, String>,
-    pub required_attributes: Vec<PlayerAttribute>,
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub attributes: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentPlayer {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub roles: Option<Vec<String>>,
+    pub federated_id: Option<String>,
+    pub api_key_placeholder: Option<String>,
+    pub attributes: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Team {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub players: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentTeam {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub join_token: Option<String>,
+    pub players: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerAttribute {
-    pub name: String,
+    pub name: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
     pub public: bool,
-    pub values: Vec<String>,
     pub required: bool,
+    pub values: Option<Vec<PlayerAttributeValue>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerAttributeValue {
+    pub value: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instance {
+    pub id: Option<Uuid>,
+    pub player_id: Option<Uuid>,
     pub name: Option<String>,
-    pub status: i32,
-    pub services: Vec<Service>,
-    pub instance_time: Option<DateTime<Utc>>,
+    pub status: InstanceState,
+    pub services: Option<Vec<Service>>,
+    pub timeout: Option<DateTime<Utc>>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub terminated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InstanceState {
+    #[serde(rename = "0")]
+    Pending = 0,
+    #[serde(rename = "1")]
+    Running = 1,
+    #[serde(rename = "2")]
+    Stopped = 2,
+    #[serde(rename = "3")]
+    Failed = 3,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Service {
     pub name: Option<String>,
+    pub hostname: Option<String>,
     pub port: i32,
-    pub protocol: String,
-    pub hostname: String,
-    pub app_protocol: String,
-    pub vhost: bool,
+    pub protocol: Option<String>,
+    pub app_protocol: Option<String>,
+    pub tls: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

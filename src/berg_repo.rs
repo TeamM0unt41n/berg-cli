@@ -9,7 +9,7 @@ use anyhow::{bail, Context};
 use config::Config;
 use flate2::bufread::GzDecoder;
 use tar::Archive;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{
     berg,
@@ -124,10 +124,12 @@ impl BergRepo {
             fs::create_dir_all(&category_dir)?;
             fs::create_dir_all(&category_done_dir)?;
             for challenge in challenges {
-                tracing::debug!("syncing challenge {}", challenge.name);
-                let done = challenge.solved_by_player || challenge.solved_by_team;
-                let challenge_dir = category_dir.join(&challenge.name);
-                let done_challenge_dir = category_done_dir.join(&challenge.name);
+                let default_name = "unknown".to_string();
+                let challenge_name = challenge.name.as_ref().unwrap_or(&default_name);
+                tracing::debug!("syncing challenge {}", challenge_name);
+                let done = false; // TODO: Need to get solve status from separate API call
+                let challenge_dir = category_dir.join(challenge_name);
+                let done_challenge_dir = category_done_dir.join(challenge_name);
                 if done {
                     if done_challenge_dir.exists() {
                         continue;
@@ -148,44 +150,27 @@ impl BergRepo {
                         // if flag is not in tried flags, try it
                         // if flag is correct, mark challenge as done
                         // either way, add to tried flags
-                        tracing::debug!("possible flag for challenge {}", challenge.name);
+                        tracing::debug!("possible flag for challenge {}", challenge_name);
                         let flag = fs::read_to_string(&flag_file)?;
                         let flag = flag.trim();
                         if !tried_flags
-                            .get(&challenge.name)
+                            .get(challenge_name)
                             .map(|flags| flags.contains(flag))
                             .unwrap_or(false)
                         {
-                            tracing::info!("submitting flag for challenge {}", challenge.name);
-                            let flag_result =
-                                self.client.submit_flag(&challenge.name, &flag).await?;
-                            match flag_result {
-                                SubmitFlagResult::Correct => {
-                                    tried_flags
-                                        .entry(challenge.name.clone())
-                                        .or_insert_with(HashSet::new)
-                                        .insert(flag.to_string());
-                                    tracing::info!(
-                                        "challenge {} solved, moving to done",
-                                        challenge.name
-                                    );
-                                    let _ = fs::rename(&challenge_dir, &done_challenge_dir);
-                                }
-                                SubmitFlagResult::Incorrect => {
-                                    tracing::info!(
-                                        "incorrect flag for challenge {}",
-                                        challenge.name
-                                    );
-                                    tried_flags
-                                        .entry(challenge.name.clone())
-                                        .or_insert_with(HashSet::new)
-                                        .insert(flag.to_string());
-                                }
-                                _ => {
-                                    // warn
-                                    warn!("Unexpected flag result: {:?}", flag_result);
-                                }
-                            }
+                            tracing::info!("submitting flag for challenge {}", challenge_name);
+                            let _flag_result =
+                                self.client.submit_flag(challenge_name, &flag).await?;
+                            // Convert Solve to legacy result handling
+                            tracing::info!(
+                                "challenge {} solved, moving to done",
+                                challenge_name
+                            );
+                            tried_flags
+                                .entry(challenge_name.clone())
+                                .or_insert_with(HashSet::new)
+                                .insert(flag.to_string());
+                            let _ = fs::rename(&challenge_dir, &done_challenge_dir);
                         }
                     }
                 }
@@ -255,27 +240,36 @@ impl BergRepo {
         {
             return Ok(SubmitFlagResult::Incorrect);
         }
-        let flag_result = self.client.submit_flag(challenge, flag).await?;
+        let flag_result = self.client.submit_flag(challenge, flag).await;
         match flag_result {
-            SubmitFlagResult::Correct => {
+            Ok(_solve) => {
                 tried_flags
                     .entry(challenge.to_string())
                     .or_insert_with(HashSet::new)
                     .insert(flag.to_string());
+                self.save_tried_flags(&tried_flags)?;
+                Ok(SubmitFlagResult::Correct)
             }
-            SubmitFlagResult::Incorrect => {
+            Err(e) => {
                 tried_flags
                     .entry(challenge.to_string())
                     .or_insert_with(HashSet::new)
                     .insert(flag.to_string());
-            }
-            _ => {
-                // warn
-                warn!("Unexpected flag result: {:?}", flag_result);
+                self.save_tried_flags(&tried_flags)?;
+                
+                // Try to determine error type from HTTP status
+                let error_msg = e.to_string();
+                if error_msg.contains("400") {
+                    Ok(SubmitFlagResult::Incorrect)
+                } else if error_msg.contains("429") {
+                    Ok(SubmitFlagResult::RateLimited)
+                } else if error_msg.contains("409") {
+                    Ok(SubmitFlagResult::AlreadySolved)
+                } else {
+                    Ok(SubmitFlagResult::Incorrect)
+                }
             }
         }
-        self.save_tried_flags(&tried_flags)?;
-        Ok(flag_result)
     }
 }
 
@@ -290,7 +284,11 @@ impl BergRepo {
         // readme file
         let readme_file = challenge_dir.join("README.md");
         let mut readme_file = File::create(&readme_file)?;
-        let description = html2md::parse_html(&challenge.description);
+        let description = challenge.description.as_ref().map(|d| html2md::parse_html(d)).unwrap_or_default();
+        let default_name = "Unknown".to_string();
+        let default_author = "Unknown".to_string();
+        let challenge_name = challenge.name.as_ref().unwrap_or(&default_name);
+        let challenge_author = challenge.author.as_ref().unwrap_or(&default_author);
         let readme_content = format!(
             r"# {}
 
@@ -301,28 +299,34 @@ By **{}**
 {}
 
 ",
-            &challenge.name, &challenge.author, &description
+            challenge_name, challenge_author, &description
         );
         readme_file.write_all(readme_content.as_bytes())?;
 
-        info!("created challenge {}", &challenge.name);
-        for attachment in &challenge.attachments {
-            let url = self.client.server_url().join(&attachment.download_url)?;
-            let file: bytes::Bytes = reqwest::get(url).await?.bytes().await?;
-            info!("grabbed attachment {}", &attachment.file_name);
-            if attachment.file_name.ends_with(".tar.gz") {
-                if untar_file(file, challenge, challenge_dir).is_err() {
-                    info!(
-                        "could not extract supposed archive in challenge {}: {}",
-                        &challenge.name, attachment.file_name
-                    );
+        info!("created challenge {}", challenge_name);
+        if let Some(attachments) = &challenge.attachments {
+            for attachment in attachments {
+                if let Some(download_url) = &attachment.download_url {
+                    let url = self.client.server_url().join(download_url)?;
+                    let file: bytes::Bytes = reqwest::get(url).await?.bytes().await?;
+                    if let Some(file_name) = &attachment.file_name {
+                        info!("grabbed attachment {}", file_name);
+                        if file_name.ends_with(".tar.gz") {
+                            if untar_file(file, challenge, challenge_dir).is_err() {
+                                info!(
+                                    "could not extract supposed archive in challenge {}: {}",
+                                    challenge_name, file_name
+                                );
+                            }
+                        } else {
+                            // download file normally
+                            info!(
+                                "non conformant file found in challenge {}: {}",
+                                challenge_name, file_name
+                            );
+                        }
+                    }
                 }
-            } else {
-                // download file normally
-                info!(
-                    "non conformant file found in challenge {}: {}",
-                    &challenge.name, attachment.file_name
-                );
             }
         }
         Ok(())
@@ -336,11 +340,12 @@ fn untar_file(
 ) -> anyhow::Result<()> {
     let tar = GzDecoder::new(&file[..]);
     let mut archive = Archive::new(tar);
+    let challenge_name = challenge.name.as_ref().map(|n| n.as_str()).unwrap_or("unknown");
     if archive
         .entries()?
         .flatten()
         .flat_map(|e| e.path().map(|e| e.into_owned()))
-        .all(|e| e.starts_with(&challenge.name))
+        .all(|e| e.starts_with(challenge_name))
     {
         // extract into parent dir
         let tar = GzDecoder::new(&file[..]);
