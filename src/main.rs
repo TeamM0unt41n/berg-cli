@@ -8,10 +8,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Init {
-            server,
-            path,
-        } => {
+        Commands::Init { server, path } => {
             berg_cli::commands::init(server, path).await?;
         }
         Commands::Sync { flagdump } => {

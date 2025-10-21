@@ -1,17 +1,8 @@
-use std::{
-    fs::{self, create_dir_all, File},
-    io::Write,
-    path::{Path, PathBuf},
-};
-
 use anyhow::{bail, Context};
 use fancy::printcoln;
-use tracing::{info, warn, Instrument};
+use tracing::{info, warn};
 /// Initialises a challenge repository in the current directory
-pub async fn init(
-    server: &str,
-    path: &Option<String>,
-) -> anyhow::Result<()> {
+pub async fn init(server: &str, path: &Option<String>) -> anyhow::Result<()> {
     let current_dir = std::env::current_dir().context("could not get current directory")?;
 
     let root_dir = if let Some(path) = path {
@@ -140,10 +131,10 @@ pub async fn instance_info() -> anyhow::Result<()> {
 }
 
 pub async fn instance_exploit(
-    script: &str,
-    cmd: &str,
-    start: bool,
-    stop: bool,
+    _script: &str,
+    _cmd: &str,
+    _start: bool,
+    _stop: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     let repo = crate::berg_repo::BergRepo::from_env().await?;
