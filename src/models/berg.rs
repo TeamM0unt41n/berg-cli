@@ -4,32 +4,38 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Ctf {
+pub struct Metadata {
+    pub version: String,
+    pub event_name: String,
+    pub event_organiser: String,
+    pub event_logo_url: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    pub server_time: DateTime<Utc>,
+    pub allow_anonymous_access: bool,
     pub freeze_start: Option<DateTime<Utc>>,
     pub freeze_end: Option<DateTime<Utc>>,
+    pub player_attributes: Vec<String>,
+    pub challenge_maximum_value: i32,
+    pub challenge_minimum_value: i32,
+    pub challenge_solves_before_minimum: i32,
     pub teams: bool,
-    pub challenges_by_category: HashMap<String, Vec<Challenge>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Challenge {
     pub name: String,
+    pub display_name: String,
     pub author: String,
     pub description: String,
+    pub hide_until: Option<DateTime<Utc>>,
     pub categories: Vec<String>,
+    pub tags: Vec<String>,
+    pub event: String,
     pub difficulty: String,
     pub flag_format: String,
     pub attachments: Vec<Attachment>,
-    pub value: i32,
-    pub solved_by_team: bool,
-    pub solved_by_player: bool,
-    pub instantiatable: bool,
-    pub player_solves: Vec<PlayerSolve>,
-    pub team_solves: Vec<TeamSolve>,
+    pub has_remote: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +51,6 @@ pub struct PlayerSolve {
     pub player_id: String,
     pub solved_at: DateTime<Utc>,
     pub challenge_name: String,
-    pub is_first_blood: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,10 +67,10 @@ pub struct TeamSolve {
 pub struct Player {
     pub id: String,
     pub name: String,
-    pub team_id: Option<String>,
-    pub discord_id: Option<String>,
+    pub roles: Option<Vec<String>>,
+    pub federated_id: Option<String>,
+    pub api_key_placeholder: Option<String>,
     pub attributes: HashMap<String, String>,
-    pub required_attributes: Vec<PlayerAttribute>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,10 +85,14 @@ pub struct PlayerAttribute {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instance {
-    pub name: Option<String>,
+    pub id: Option<String>,
+    pub player_id: String,
+    pub name: String,
     pub status: i32,
     pub services: Vec<Service>,
-    pub instance_time: Option<DateTime<Utc>>,
+    pub timeout: Option<DateTime<Utc>>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub terminated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +103,7 @@ pub struct Service {
     pub protocol: String,
     pub hostname: String,
     pub app_protocol: String,
-    pub vhost: bool,
+    pub tls: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

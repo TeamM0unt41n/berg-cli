@@ -21,7 +21,7 @@
             const data = await response.json();
             return data;
         }
-        
+
         async function fetchCtf() {
             const response = await fetch('http://localhost:3000/api/ctf');
             const data = await response.json();
@@ -50,7 +50,7 @@
                             y: cumulativeScore
                         };
                     });
-            
+
                 return {
                     label: player.name,
                     data: scoresOverTime,
@@ -92,7 +92,7 @@
             console.log(ctf);
             for (let category of Object.values(ctf.challengesByCategory)) {
                 for (let challenge of category) {
-                    
+
                     challenges[challenge.name] = challenge.value;
                 }
             }
@@ -131,4 +131,3 @@
     </script>
 </body>
 </html>
-

@@ -1,18 +1,8 @@
-use std::{
-    fs::{self, create_dir_all, File},
-    io::Write,
-    path::{Path, PathBuf},
-};
-
 use anyhow::{bail, Context};
 use fancy::printcoln;
-use tracing::{info, warn, Instrument};
+use tracing::{info, warn};
 /// Initialises a challenge repository in the current directory
-pub async fn init(
-    server: &str,
-    path: &Option<String>,
-    basic_auth: &Option<String>,
-) -> anyhow::Result<()> {
+pub async fn init(server: &str, path: &Option<String>) -> anyhow::Result<()> {
     let current_dir = std::env::current_dir().context("could not get current directory")?;
 
     let root_dir = if let Some(path) = path {
@@ -29,19 +19,14 @@ pub async fn init(
     // ask for optional authentication token
     let auth_token = inquire::Confirm::new("Do you have an authentication token?").prompt()?;
     let auth_token = if auth_token {
-        Some(inquire::Password::new("Enter your authentication token: ").prompt()?)
+        let uid = inquire::Text::new("Enter your uid: ").prompt()?;
+        let token = inquire::Password::new("Enter your authentication token: ").prompt()?;
+        Some((uid, token))
     } else {
         None
     };
 
-    let basic_auth = basic_auth.to_owned().map(|auth| {
-        let mut parts = auth.split(':');
-        let username = parts.next().unwrap();
-        let password = parts.next().unwrap();
-        (username.to_owned(), password.to_owned())
-    });
-
-    let repo = crate::berg_repo::BergRepo::create(&root_dir, server, &auth_token, &basic_auth)?;
+    let repo = crate::berg_repo::BergRepo::create(&root_dir, server, &auth_token).await?;
     println!("Repository initialised at {}", root_dir.display());
     repo.sync(true, false).await?;
     println!("Repository synchronised.");
@@ -49,23 +34,24 @@ pub async fn init(
 }
 
 pub async fn sync(flagdump: bool) -> anyhow::Result<()> {
-    let repo = crate::berg_repo::BergRepo::from_env()?;
+    let repo = crate::berg_repo::BergRepo::from_env().await?;
     repo.sync(false, flagdump).await?;
 
     Ok(())
 }
 
 pub async fn authenticate() -> anyhow::Result<()> {
+    let uid = inquire::Text::new("Enter your uid: ").prompt()?;
     let token = inquire::Text::new("Enter your authentication token: ").prompt()?;
 
-    let mut repo = crate::berg_repo::BergRepo::from_env()?;
-    repo.authenticate(&token)?;
+    let mut repo = crate::berg_repo::BergRepo::from_env().await?;
+    repo.authenticate(&uid, &token).await?;
 
     Ok(())
 }
 
 pub async fn submit(challenge: &str, flag: &str) -> anyhow::Result<()> {
-    let repo = crate::berg_repo::BergRepo::from_env()?;
+    let repo = crate::berg_repo::BergRepo::from_env().await?;
     let result = repo.submit_flag(challenge, flag).await?;
 
     match result {
@@ -84,11 +70,11 @@ pub async fn submit(challenge: &str, flag: &str) -> anyhow::Result<()> {
 }
 
 pub async fn instance_start(challenge: &str, force: bool) -> anyhow::Result<()> {
-    let repo = crate::berg_repo::BergRepo::from_env()?;
+    let repo = crate::berg_repo::BergRepo::from_env().await?;
 
-    let status = repo.client.get_self().await?;
-    if let Some(name) = &status.challenge_instance.name {
-        if name == challenge {
+    let status = repo.client.get_instance().await?;
+    if !status.name.is_empty() {
+        if status.name == challenge {
             printcoln!("Already running the same challenge instance.");
             return Ok(());
         } else if force {
@@ -107,7 +93,7 @@ pub async fn instance_start(challenge: &str, force: bool) -> anyhow::Result<()> 
 }
 
 pub async fn instance_stop() -> anyhow::Result<()> {
-    let repo = crate::berg_repo::BergRepo::from_env()?;
+    let repo = crate::berg_repo::BergRepo::from_env().await?;
     repo.client.stop_instance().await?;
 
     info!("Instance stopped.");
@@ -116,11 +102,11 @@ pub async fn instance_stop() -> anyhow::Result<()> {
 }
 
 pub async fn instance_info() -> anyhow::Result<()> {
-    let repo = crate::berg_repo::BergRepo::from_env()?;
-    let status = repo.client.get_self().await?;
-    if let Some(name) = status.challenge_instance.name {
-        printcoln!("Challenge instance: {}", name);
-        for service in status.challenge_instance.services {
+    let repo = crate::berg_repo::BergRepo::from_env().await?;
+    let status = repo.client.get_instance().await?;
+    if !status.name.is_empty() {
+        printcoln!("Challenge instance: {}", status.name);
+        for service in status.services {
             if let Some(name) = &service.name {
                 printcoln!(
                     "{}: {}://{}:{}",
@@ -145,19 +131,19 @@ pub async fn instance_info() -> anyhow::Result<()> {
 }
 
 pub async fn instance_exploit(
-    script: &str,
-    cmd: &str,
-    start: bool,
-    stop: bool,
+    _script: &str,
+    _cmd: &str,
+    _start: bool,
+    _stop: bool,
     force: bool,
 ) -> anyhow::Result<()> {
-    let repo = crate::berg_repo::BergRepo::from_env()?;
+    let repo = crate::berg_repo::BergRepo::from_env().await?;
     let context = repo.context();
     // check if an instance is started
-    let status = repo.client.get_self().await?;
-    if let Some(name) = status.challenge_instance.name {
+    let status = repo.client.get_instance().await?;
+    if !status.name.is_empty() {
         // instance exists
-        if name != context.name {
+        if status.name != context.name {
             if force {
                 // stop instance
                 repo.client.stop_instance().await?;

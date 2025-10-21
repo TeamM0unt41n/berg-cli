@@ -1,23 +1,17 @@
-use std::{
-    fs::{create_dir_all, File},
-    io::Write,
-    path::PathBuf,
-};
-
 use anyhow::Context;
-use flate2::bufread::GzDecoder;
+use openidconnect::{
+    core::CoreProviderMetadata, AuthType, ClientId, IssuerUrl, OAuth2TokenResponse,
+    ResourceOwnerPassword, ResourceOwnerUsername,
+};
 use serde::de::DeserializeOwned;
-use tar::Archive;
-use tracing::info;
 
-use crate::models::{Challenge, Instance, SubmitFlagResult};
+use crate::models::{Instance, SubmitFlagResult};
 
 #[derive(Clone)]
 pub struct Client {
     http_client: reqwest::Client,
     berg_server: String,
     token: Option<String>,
-    _basic_auth: Option<(String, String)>,
 }
 
 impl Client {
@@ -32,20 +26,35 @@ impl Client {
             http_client,
             berg_server: berg_server.as_ref().to_owned(),
             token: None,
-            _basic_auth: None,
         }
     }
 
-    pub fn authenticate(&self, token: &str) -> Self {
+    pub async fn authenticate(&self, uid: &str, token: &str) -> anyhow::Result<Self> {
         let mut clone = self.clone();
-        clone.token = Some(token.to_owned());
-        clone
-    }
+        // do the grant
+        let issuer = &self.berg_server;
+        let http_client = self.http_client.clone();
+        let metadata =
+            CoreProviderMetadata::discover_async(IssuerUrl::new(issuer.to_string())?, &http_client)
+                .await?;
+        let oidc_client = openidconnect::core::CoreClient::from_provider_metadata(
+            metadata,
+            ClientId::new("berg-client".to_string()),
+            None,
+        )
+        .set_auth_type(AuthType::RequestBody);
 
-    pub fn basic_auth(&self, username: &str, password: &str) -> Self {
-        let mut clone = self.clone();
-        clone._basic_auth = Some((username.to_owned(), password.to_owned()));
-        clone
+        let response = oidc_client
+            .exchange_password(
+                &ResourceOwnerUsername::new(uid.to_string()),
+                &ResourceOwnerPassword::new(token.to_string()),
+            )?
+            .request_async(&http_client)
+            .await?;
+        let password = response.access_token();
+
+        clone.token = Some(password.clone().into_secret().to_owned());
+        Ok(clone)
     }
 
     pub fn server_url(&self) -> url::Url {
@@ -53,30 +62,36 @@ impl Client {
     }
 
     async fn get(&self, url: &str) -> reqwest::Result<reqwest::Response> {
-        let mut request = self.http_client.get(format!("{}{}", self.berg_server, url));
+        let mut request =
+            self.http_client
+                .get(format!("{}{}", self.berg_server, url.trim_prefix("/")));
 
         if let Some(token) = &self.token {
-            request = request.header("Cookie", format!("berg-auth={}", token));
+            request = request.bearer_auth(token);
         }
 
-        if let Some((username, password)) = &self._basic_auth {
-            request = request.basic_auth(username, Some(password));
+        request.send().await
+    }
+
+    async fn delete(&self, url: &str) -> reqwest::Result<reqwest::Response> {
+        let mut request =
+            self.http_client
+                .delete(format!("{}{}", self.berg_server, url.trim_prefix("/")));
+
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
         }
 
         request.send().await
     }
 
     fn post_builder(&self, url: &str) -> reqwest::RequestBuilder {
-        let mut request = self
-            .http_client
-            .post(format!("{}{}", self.berg_server, url));
+        let mut request =
+            self.http_client
+                .post(format!("{}{}", self.berg_server, url.trim_prefix("/")));
 
         if let Some(token) = &self.token {
-            request = request.header("Cookie", format!("berg-auth={}", token));
-        }
-
-        if let Some((username, password)) = &self._basic_auth {
-            request = request.basic_auth(username, Some(password));
+            request = request.bearer_auth(token);
         }
 
         request
@@ -93,8 +108,16 @@ impl Client {
 }
 
 impl Client {
-    pub async fn get_ctf(&self) -> anyhow::Result<crate::models::Ctf> {
-        self.get_json("/api/v1/ctf").await
+    pub async fn get_metadata(&self) -> anyhow::Result<crate::models::Metadata> {
+        self.get_json("/api/metadata").await
+    }
+
+    pub async fn get_challenges(&self) -> anyhow::Result<Vec<crate::models::Challenge>> {
+        self.get_json("/api/challenges").await
+    }
+
+    pub async fn get_solves(&self) -> anyhow::Result<Vec<crate::models::PlayerSolve>> {
+        self.get_json("/api/solves").await
     }
 
     pub async fn submit_flag(
@@ -102,7 +125,7 @@ impl Client {
         challenge: &str,
         flag: &str,
     ) -> anyhow::Result<SubmitFlagResult> {
-        self.post_builder("/api/v1/flag")
+        self.post_builder("/api/solves")
             .json(&serde_json::json!({
                 "challenge": challenge,
                 "flag": flag,
@@ -117,12 +140,16 @@ impl Client {
             .context("could not deserialize json")
     }
 
-    pub async fn get_self(&self) -> anyhow::Result<crate::models::PlayerSummary> {
-        self.get_json("/api/v1/self").await
+    pub async fn get_self(&self) -> anyhow::Result<crate::models::Player> {
+        self.get_json("/api/players/current").await
+    }
+
+    pub async fn get_instance(&self) -> anyhow::Result<Instance> {
+        self.get_json("/api/instances/current").await
     }
 
     pub async fn start_instance(&self, challenge: &str) -> anyhow::Result<Instance> {
-        self.post_builder("/api/v1/challengeInstance/start")
+        self.post_builder("/api/instances/current")
             .json(&serde_json::json!({
                 "challenge": challenge,
             }))
@@ -135,8 +162,7 @@ impl Client {
     }
 
     pub async fn stop_instance(&self) -> anyhow::Result<()> {
-        self.post_builder("/api/v1/challengeInstance/stop")
-            .send()
+        self.delete("/api/instances/current")
             .await
             .context("could not stop instance")?
             .error_for_status()
