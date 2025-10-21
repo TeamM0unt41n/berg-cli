@@ -1,0 +1,27 @@
+name: Tag Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  semantic-release:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.21"
+
+      - name: Run go-semantic-release
+        uses: go-semantic-release/action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
