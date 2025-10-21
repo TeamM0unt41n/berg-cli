@@ -11,9 +11,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Init {
             server,
             path,
-            basic_auth,
         } => {
-            berg_cli::commands::init(server, path, basic_auth).await?;
+            berg_cli::commands::init(server, path).await?;
         }
         Commands::Sync { flagdump } => {
             berg_cli::commands::sync(*flagdump).await?;
@@ -63,8 +62,6 @@ pub enum Commands {
         server: String,
         #[arg()]
         path: Option<String>,
-        #[arg(long)]
-        basic_auth: Option<String>,
     },
     Sync {
         #[arg(long)]

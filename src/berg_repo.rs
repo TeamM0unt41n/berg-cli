@@ -25,10 +25,10 @@ pub struct BergRepo {
 
 impl BergRepo {
     /// Tries to open the repository at the current directory or any of its parents
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub async fn from_env() -> anyhow::Result<Self> {
         let current_dir = std::env::current_dir().context("could not get current directory")?;
         let root_dir = find_berg_toml_dir(&current_dir)?;
-        Self::open(&root_dir)
+        Self::open(&root_dir).await
     }
 
     pub async fn create(
@@ -87,7 +87,7 @@ impl BergRepo {
         if let Some((uid, token)) = credentials {
             let mut auth_file = File::create(self.auth_path())?;
             auth_file.write_all(uid.as_bytes())?;
-            auth_file.write(b":");
+            auth_file.write_all(b":")?;
             auth_file.write_all(token.as_bytes())?;
         }
         tracing::info!("Repository created at {}", self.path.display());
@@ -106,7 +106,12 @@ impl BergRepo {
         }
 
         tracing::debug!("loading ctf");
-        let ctf = self.client.get_ctf().await?;
+        let ctf = self.client.get_metadata().await?;
+        let challenges = self.client.get_challenges().await?;
+        let solves = self.client.get_solves().await?;
+        let player = self.client.get_self().await?;
+        let uid = player.id; 
+        let solved_challenges: Vec<String> = solves.iter().filter(|s| s.player_id == uid).map(|s| s.challenge_name.to_owned()).collect();
 
         let mut tried_flags: HashMap<String, HashSet<String>> = self.load_tried_flags()?;
         tracing::debug!(
@@ -114,15 +119,14 @@ impl BergRepo {
             tried_flags.iter().map(|(_, v)| v.len()).sum::<usize>()
         );
 
-        for (category, challenges) in ctf.challenges_by_category {
-            tracing::debug!("syncing category {}", category);
-            let category_dir = self.path.join(&category);
-            let category_done_dir = self.done_path().join(&category);
-            fs::create_dir_all(&category_dir)?;
-            fs::create_dir_all(&category_done_dir)?;
-            for challenge in challenges {
+        for challenge in challenges {
+            let category = challenge.categories[0].to_owned();
                 tracing::debug!("syncing challenge {}", challenge.name);
-                let done = challenge.solved_by_player || challenge.solved_by_team;
+                let category_dir = self.path.join(&category);
+                let category_done_dir = self.done_path().join(&category);
+                fs::create_dir_all(&category_dir)?;
+                fs::create_dir_all(&category_done_dir)?;
+                let done = solved_challenges.contains(&challenge.name);
                 let challenge_dir = category_dir.join(&challenge.name);
                 let done_challenge_dir = category_done_dir.join(&challenge.name);
                 if done {
@@ -186,7 +190,6 @@ impl BergRepo {
                         }
                     }
                 }
-            }
         }
 
         self.save_tried_flags(&tried_flags)?;
@@ -213,6 +216,8 @@ impl BergRepo {
         let client = self.client.authenticate(uid, token).await?;
         // write authentication token to file
         let mut file = File::create(self.auth_path())?;
+        file.write_all(uid.as_bytes())?;
+        file.write_all(b":")?;
         file.write_all(token.as_bytes())?;
         self.client = client;
         Ok(())

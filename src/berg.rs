@@ -60,7 +60,17 @@ impl Client {
     }
 
     async fn get(&self, url: &str) -> reqwest::Result<reqwest::Response> {
-        let mut request = self.http_client.get(format!("{}{}", self.berg_server, url));
+        let mut request = self.http_client.get(format!("{}{}", self.berg_server, url.trim_prefix("/")));
+
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);  
+        }
+
+        request.send().await
+    }
+
+    async fn delete(&self, url: &str) -> reqwest::Result<reqwest::Response> {
+        let mut request = self.http_client.delete(format!("{}{}", self.berg_server, url.trim_prefix("/")));
 
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);  
@@ -72,7 +82,7 @@ impl Client {
     fn post_builder(&self, url: &str) -> reqwest::RequestBuilder {
         let mut request = self
             .http_client
-            .post(format!("{}{}", self.berg_server, url));
+            .post(format!("{}{}", self.berg_server, url.trim_prefix("/")));
 
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);  
@@ -92,8 +102,16 @@ impl Client {
 }
 
 impl Client {
-    pub async fn get_ctf(&self) -> anyhow::Result<crate::models::Ctf> {
-        self.get_json("/api/v1/ctf").await
+    pub async fn get_metadata(&self) -> anyhow::Result<crate::models::Metadata> {
+        self.get_json("/api/metadata").await
+    }
+
+    pub async fn get_challenges(&self) -> anyhow::Result<Vec<crate::models::Challenge>> {
+        self.get_json("/api/challenges").await
+    }
+
+    pub async fn get_solves(&self) -> anyhow::Result<Vec<crate::models::PlayerSolve>> {
+        self.get_json("/api/solves").await
     }
 
     pub async fn submit_flag(
@@ -101,7 +119,7 @@ impl Client {
         challenge: &str,
         flag: &str,
     ) -> anyhow::Result<SubmitFlagResult> {
-        self.post_builder("/api/v1/flag")
+        self.post_builder("/api/solves")
             .json(&serde_json::json!({
                 "challenge": challenge,
                 "flag": flag,
@@ -116,12 +134,16 @@ impl Client {
             .context("could not deserialize json")
     }
 
-    pub async fn get_self(&self) -> anyhow::Result<crate::models::PlayerSummary> {
-        self.get_json("/api/v1/self").await
+    pub async fn get_self(&self) -> anyhow::Result<crate::models::Player> {
+        self.get_json("/api/players/current").await
+    }
+
+    pub async fn get_instance(&self) -> anyhow::Result<Instance> {
+        self.get_json("/api/instances/current").await
     }
 
     pub async fn start_instance(&self, challenge: &str) -> anyhow::Result<Instance> {
-        self.post_builder("/api/v1/challengeInstance/start")
+        self.post_builder("/api/instances/current")
             .json(&serde_json::json!({
                 "challenge": challenge,
             }))
@@ -134,8 +156,7 @@ impl Client {
     }
 
     pub async fn stop_instance(&self) -> anyhow::Result<()> {
-        self.post_builder("/api/v1/challengeInstance/stop")
-            .send()
+        self.delete("/api/instances/current")
             .await
             .context("could not stop instance")?
             .error_for_status()
