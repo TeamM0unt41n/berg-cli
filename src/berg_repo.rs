@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -120,7 +120,7 @@ impl BergRepo {
             .map(|s| s.challenge_name.to_owned())
             .collect();
 
-        let mut tried_flags: HashMap<String, HashSet<String>> = self.load_tried_flags()?;
+        let mut tried_flags: BTreeMap<String, BTreeSet<String>> = self.load_tried_flags()?;
         tracing::debug!(
             "loaded {} tried flags",
             tried_flags.values().map(|v| v.len()).sum::<usize>()
@@ -195,7 +195,8 @@ impl BergRepo {
             }
         }
 
-        self.save_tried_flags(&tried_flags)?;
+        // we shouldn't need this, we already save when we submit a flag
+        // self.save_tried_flags(&tried_flags)?;
 
         Ok(())
     }
@@ -226,22 +227,22 @@ impl BergRepo {
         Ok(())
     }
 
-    fn load_tried_flags(&self) -> anyhow::Result<HashMap<String, HashSet<String>>> {
+    fn load_tried_flags(&self) -> anyhow::Result<BTreeMap<String, BTreeSet<String>>> {
         let tried_flags_file = self.berg_dir().join("tried_flags");
         if tried_flags_file.exists() {
             serde_json::from_reader(File::open(tried_flags_file)?)
                 .context("could not parse tried_flags file")
         } else {
-            Ok(HashMap::new())
+            Ok(BTreeMap::new())
         }
     }
 
     fn save_tried_flags(
         &self,
-        tried_flags: &HashMap<String, HashSet<String>>,
+        tried_flags: &BTreeMap<String, BTreeSet<String>>,
     ) -> anyhow::Result<()> {
         let tried_flags_file = self.berg_dir().join("tried_flags");
-        serde_json::to_writer(File::create(tried_flags_file)?, tried_flags)
+        serde_json::to_writer_pretty(File::create(tried_flags_file)?, tried_flags)
             .context("could not write tried_flags file")
     }
 
@@ -263,13 +264,13 @@ impl BergRepo {
             SubmitFlagResult::Correct => {
                 tried_flags
                     .entry(challenge.to_string())
-                    .or_insert_with(HashSet::new)
+                    .or_insert_with(BTreeSet::new)
                     .insert(flag.to_string());
             }
             SubmitFlagResult::Incorrect => {
                 tried_flags
                     .entry(challenge.to_string())
-                    .or_insert_with(HashSet::new)
+                    .or_insert_with(BTreeSet::new)
                     .insert(flag.to_string());
             }
             _ => {
