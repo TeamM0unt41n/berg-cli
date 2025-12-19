@@ -324,8 +324,8 @@ By **{}**
             } else {
                 // download file normally
                 info!(
-                    "non conformant file found in challenge {}: {}",
-                    &challenge.name, attachment.file_name
+                    "non conformant file found in challenge {}: {}, {}",
+                    &challenge.name, attachment.file_name, attachment.download_url
                 );
             }
         }
