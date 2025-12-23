@@ -8,17 +8,17 @@ anyhow = "1.0.100"
 bytes = "1.11.0"
 chrono = { version = "0.4.42", features = ["serde"] }
 clap = { version = "4.5.53", features = ["derive"] }
-config = "0.15.18"
+config = "0.15.19"
 fancy = "0.3.1"
 flate2 = "1.1.5"
 git2 = "0.20.3"
 html2md = "0.2.15"
 indicatif = "0.18.3"
-inquire = "0.8.1"
+inquire = "0.9.1"
 openidconnect = "4.0.1"
-reqwest = { version = "0.12.26", features = ["cookies", "json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12.28", features = ["cookies", "json", "rustls-tls"], default-features = false }
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
+serde_json = "1.0.146"
 tar = "0.4.44"
 tokio = { version = "1.48.0", features = ["full"] }
 toml = "0.9.10"
