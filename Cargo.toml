@@ -18,10 +18,10 @@ inquire = "0.9.1"
 openidconnect = "4.0.1"
 reqwest = { version = "0.12.28", features = ["cookies", "json", "rustls-tls"], default-features = false }
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.148"
+serde_json = "1.0.149"
 tar = "0.4.44"
 tokio = { version = "1.49.0", features = ["full"] }
-toml = "0.9.10"
+toml = "0.9.11"
 tracing = { version = "0.1.44", features = ["log"] }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 url = "2.5.8"
